@@ -1,9 +1,10 @@
 import os
 from pprint import pprint
-from typing import List, Dict
+from typing import List
 
 import requests
 
+from gitlab4.helpers import load_environment_vars, exclude_variables
 from gitlab4.schemas import ProjectVariable, Project
 
 
@@ -11,15 +12,6 @@ class GitlabClient:
     def __init__(self, gitlab_token: str):
         self.headers = {'PRIVATE-TOKEN': gitlab_token}
         self.host = 'https://gitlab.com'
-
-    def get_ci_project_variables(self, project_id: str, variables: List[str]) -> Dict[str, str]:
-        base_url = f"{self.host}/api/v4/projects/{project_id}/variables"
-        variable_data = dict()
-        for variable in variables:
-            variable_url = f'{base_url}/{variable}'
-            response = requests.get(variable_url, headers=self.headers)
-            variable_data[variable] = response.json()
-        return variable_data
 
     def list_variables(self, project_id: int | str) -> List[ProjectVariable]:
         """https://docs.gitlab.com/ee/api/project_level_variables.html
@@ -45,6 +37,22 @@ class GitlabClient:
         response_data = response.json()
         return response_data
 
+    def get_variable(self, project_id: int | str, variable_name: str) -> List[ProjectVariable]:
+        """https://docs.gitlab.com/ee/api/project_level_variables.html
+        GET /projects/:id/variables
+        """
+        url = f"{self.host}/api/v4/projects/{project_id}/variables/{variable_name}"
+        response = requests.get(url=url, headers=self.headers)
+        var_data = response.json()
+        var_list = []
+        if response.status_code == 200:
+            if isinstance(var_data, list):
+                for var in var_data:
+                    var_list.append(ProjectVariable(**var))
+            else:
+                var_list.append(ProjectVariable(**var_data))
+        return var_list
+
     def create_variable(self, project_id: int | str, value: ProjectVariable) -> ProjectVariable | None:
         """https://docs.gitlab.com/ee/api/project_level_variables.html#create-a-variable
         """
@@ -69,28 +77,15 @@ class GitlabClient:
             return None
 
 
-def load_environment_vars():
-    from dotenv import load_dotenv
-    from pathlib import Path
-    environment_folder = Path(__file__).parent.parent / '.envs'
-    environment_file = environment_folder / 'environment_vars.txt'
-    pprint(f'{environment_file} {environment_file.exists()}')
-    load_dotenv(dotenv_path=environment_file)
+def copy_environment_files(source_project_id: str, target_project_id: str, exclude='ENVIRONMENT'):
+    project_variables = client.list_variables(project_id=source_project_id)
 
+    clean_vars = exclude_variables(variables=project_variables, exclude=exclude)
 
-def exclude_variables(variables: List[ProjectVariable], value: str = 'ENVIRONMENT') -> List[ProjectVariable]:
-    clean_list = []
-    c = 1
-    i = 1
-    for variable in variables:
-        if value in variable.key:
-            print(f'Excluded {c}. {variable.key}')
-            c += 1
-        else:
-            #  print(f'Added {i}. {variable.key}')
-            i += 1
-            clean_list.append(variable)
-    return clean_list
+    for var in clean_vars:
+        pprint(f'Pushing {var.key}')
+        new_var = client.create_variable(project_id=target_project_id, value=var)
+        print(f'Pushed {new_var.key}')
 
 
 if __name__ == '__main__':
@@ -108,12 +103,3 @@ if __name__ == '__main__':
 
     project_info = client.get_project_info(project_id=PROJECT_ID_2)
     print(f'Project name: {project_info.name} id: {PROJECT_ID_2} ')
-
-    project_variables = client.list_variables(project_id=PROJECT_ID_1)
-
-    clean_vars = exclude_variables(variables=project_variables)
-
-    for var in clean_vars:
-        pprint(f'Pushing {var.key}')
-        new_var = client.create_variable(project_id=PROJECT_ID_2, value=var)
-        print(f'Pushed {new_var.key}')
