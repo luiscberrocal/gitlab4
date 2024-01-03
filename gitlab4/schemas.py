@@ -6,14 +6,14 @@ from pydantic import BaseModel
 
 
 class ProjectVariable(BaseModel):
-    variable_type: str
+    variable_type: str = 'env_var'
     key: str
     value: str
-    protected: bool
-    masked: bool
-    raw: bool
-    environment_scope: str
-    description: str | None
+    protected: bool = False
+    masked: bool = False
+    raw: bool = False
+    environment_scope: str = "*"
+    description: str | None = None
 
 
 class Namespace(BaseModel):
